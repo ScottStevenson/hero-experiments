@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spellbook — Contract Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: #fff; }
+
+  .stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    overflow: hidden;
+  }
+
+  /* === Schematic occupies the lower portion (cards sit above it) === */
+  .schematic {
+    position: absolute;
+    top: 32%;
+    left: 0;
+    right: 0;
+    bottom: 5%;
+  }
+  .schematic svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* schematic primitives */
+  .line { stroke: #ffffff; stroke-width: 1; fill: none; stroke-linecap: square; }
+  .label-box { fill: #000; stroke: #ffffff; stroke-width: 1; }
+  .label-text { fill: #ffffff; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 14px; letter-spacing: 0.02em; }
+
+  .review-rect, .cyl { transition: opacity 0.25s ease; }
+  /* Component highlight handled via SVG filter applied/removed via JS */
+
+  /* beams — glow is provided by SVG <filter> elements (more reliable in Safari) */
+  .beam {
+    stroke: #ffffff;
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+  }
+  .beam.brand { stroke: #FF4716; }
+
+  /* === Card layer (each slot positioned by JS to align with its component) === */
+  .cards-layer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 4%;
+    height: 26%;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .slot {
+    position: absolute;
+    bottom: 0;
+    width: clamp(220px, 22vw, 320px);
+    display: flex;
+    align-items: flex-end;
+    pointer-events: auto;
+  }
+
+  .card {
+    width: 100%;
+    background: rgba(8, 8, 8, 0.88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 0; /* SQUARE corners */
+    padding: 16px 18px;
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.5;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.35s ease, transform 0.45s cubic-bezier(.2,.7,.2,1), border-color 0.25s ease;
+    will-change: opacity, transform;
+  }
+  .card.show { opacity: 1; transform: translateY(0); }
+
+  .card .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.55);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .card .eyebrow .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: #FF4716;
+    box-shadow: 0 0 8px #FF4716;
+  }
+  .card .eyebrow .dot.alert { background: #fb923c; box-shadow: 0 0 8px #fb923c; }
+
+  .card .ctype-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 10px;
+  }
+  .card .ctype { font-size: 16px; font-weight: 500; letter-spacing: -0.015em; }
+  .card .full-name { font-size: 11px; color: rgba(255,255,255,0.5); }
+
+  .card .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+    font-size: 13px;
+  }
+  .card .row .label {
+    color: rgba(255,255,255,0.55);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    min-width: 64px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .card .row .val { color: #fff; }
+
+  .rule {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+    font-size: 12.5px;
+  }
+  .rule .icon {
+    width: 14px; height: 14px;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  /* Safari: inline SVGs inside flex/inline-flex containers can fail to size — force explicit dimensions */
+  .card .icon svg, .card .badge-row .icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .rule.pass { color: rgba(255,255,255,0.95); }
+  .rule.pass .icon { color: #4ade80; }
+  .rule.fail { color: rgba(255,255,255,0.95); }
+  .rule.fail .icon { color: #fb923c; }
+
+  /* Compact badge cards */
+  .card.badge {
+    padding: 14px 18px;
+  }
+  .card.badge .badge-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .card.badge .badge-row .icon { width: 14px; height: 14px; }
+  .card.badge.pass { border-color: rgba(74, 222, 128, 0.4); }
+  .card.badge.pass .badge-row { color: #4ade80; }
+  .card.badge.redlining { border-color: rgba(251, 146, 60, 0.4); }
+  .card.badge.redlining .badge-row { color: #fb923c; }
+
+  .insight-text {
+    font-size: 14px;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+    color: #fff;
+  }
+  .insight-meta {
+    margin-top: 12px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.45);
+    letter-spacing: 0.04em;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .card.alert { border-color: rgba(251, 146, 60, 0.35); }
+
+  /* Footer hint */
+  .hint {
+    position: absolute;
+    left: 50%;
+    bottom: 1.5%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    z-index: 5;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .hint .pulse {
+    display: inline-block;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 8px rgba(255,255,255,0.7);
+    margin-right: 0.7em;
+    vertical-align: middle;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="schematic">
+    <svg id="canvas" viewBox="0 0 1920 700" preserveAspectRatio="xMidYMid meet">
+      <!-- ============ Glow filters (Safari-compatible) ============ -->
+      <defs>
+        <filter id="beam-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" result="b1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b2"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="b3"/>
+          <feMerge>
+            <feMergeNode in="b3"/>
+            <feMergeNode in="b2"/>
+            <feMergeNode in="b1"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        <filter id="comp-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3" result="cb1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="cb2"/>
+          <feMerge>
+            <feMergeNode in="cb2"/>
+            <feMergeNode in="cb1"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+
+      <!-- ============ Intake fan ============ -->
+      <g id="intake-fan">
+        <line class="line fanline" data-i="0" x1="60" y1="60"  x2="250" y2="240"/>
+        <line class="line fanline" data-i="1" x1="60" y1="105" x2="250" y2="240"/>
+        <line class="line fanline" data-i="2" x1="60" y1="150" x2="250" y2="240"/>
+        <line class="line fanline" data-i="3" x1="60" y1="195" x2="250" y2="240"/>
+        <line class="line fanline" data-i="4" x1="60" y1="240" x2="250" y2="240"/>
+        <line class="line fanline" data-i="5" x1="60" y1="285" x2="250" y2="240"/>
+        <line class="line fanline" data-i="6" x1="60" y1="330" x2="250" y2="240"/>
+        <line class="line fanline" data-i="7" x1="60" y1="375" x2="250" y2="240"/>
+        <line class="line fanline" data-i="8" x1="60" y1="420" x2="250" y2="240"/>
+      </g>
+
+      <!-- ============ Single horizontal pipe ============ -->
+      <line class="line pipe" id="pipe" x1="250" y1="240" x2="1710" y2="240"/>
+
+      <!-- ============ Review rectangle ============ -->
+      <rect class="line review-rect" id="reviewRect"
+            x="720" y="120" width="400" height="240" fill="none"/>
+
+      <!-- ============ Insight cylinder ============ -->
+      <g class="cyl" id="insightCyl">
+        <ellipse class="line" cx="1800" cy="120" rx="90" ry="26"/>
+        <line class="line" x1="1710" y1="120" x2="1710" y2="360"/>
+        <line class="line" x1="1890" y1="120" x2="1890" y2="360"/>
+        <ellipse class="line" cx="1800" cy="360" rx="90" ry="26"/>
+      </g>
+
+      <!-- ============ Labels (well-separated from lines) ============ -->
+      <g id="labels">
+        <!-- Intake label: above the line, right of fan tip -->
+        <rect class="label-box" x="290" y="190" width="76" height="32" rx="0"/>
+        <text class="label-text" x="328" y="210" text-anchor="middle">Intake</text>
+
+        <!-- Review label: well above rectangle -->
+        <rect class="label-box" x="884" y="50" width="80" height="32" rx="0"/>
+        <text class="label-text" x="924" y="70" text-anchor="middle">Review</text>
+
+        <!-- Insight label: well below cylinder -->
+        <rect class="label-box" x="1762" y="430" width="76" height="32" rx="0"/>
+        <text class="label-text" x="1800" y="450" text-anchor="middle">Insight</text>
+      </g>
+
+      <!-- beams overlay -->
+      <g id="beams"></g>
+    </svg>
+  </div>
+
+  <!-- ============ Card layer (positioned by JS) ============ -->
+  <div class="cards-layer">
+    <div class="slot" id="slot-intake"></div>
+    <div class="slot" id="slot-review"></div>
+    <div class="slot" id="slot-insight"></div>
+  </div>
+
+  <div class="hint"><span class="pulse"></span>LIVE PIPELINE</div>
+</div>
+
+<script>
+// ============================================================
+//  CONTRACT TYPE DATASET
+// ============================================================
+const contractTypes = [
+  {
+    type: 'MSA',
+    fullName: 'Master Services Agreement',
+    sources: ['Salesforce', 'Email', 'HubSpot'],
+    teams: ['Sales', 'Procurement'],
+    rules: [
+      'Mutual indemnification',
+      'Liability cap ≤ 12 mo fees',
+      'Auto-renewal disabled',
+      'Delaware governing law',
+      'Termination for convenience: 30d'
+    ],
+    insights: [
+      { text: 'Which MSAs expire this month?', alert: false },
+      { text: '12 MSAs renew in next 30 days', alert: false },
+      { text: 'Average MSA cycle time: 8 days', alert: false },
+      { text: '$4.2M in active MSA value across 38 vendors', alert: false },
+      { text: '5 MSAs flagged for renegotiation', alert: true }
+    ]
+  },
+  {
+    type: 'NDA',
+    fullName: 'Non-Disclosure Agreement',
+    sources: ['Email', 'Microsoft Teams', 'Slack', 'Salesforce', 'DocuSign'],
+    teams: ['Sales', 'Procurement', 'HR'],
+    rules: [
+      'Mutual confidentiality',
+      'Term ≤ 3 years',
+      'No non-solicit clause',
+      'Standard jurisdiction',
+      'Definition of confidential info'
+    ],
+    insights: [
+      { text: '847 active NDAs in your repository', alert: false },
+      { text: 'NDAs averaged 2.1 days to close last quarter', alert: false },
+      { text: 'Top 5 NDA counterparties this month', alert: false },
+      { text: '14 NDAs need renewal this quarter', alert: false }
+    ]
+  },
+  {
+    type: 'Employment Agreement',
+    fullName: 'Employment Agreement',
+    sources: ['HubSpot', 'Email', 'BambooHR'],
+    teams: ['HR'],
+    rules: [
+      'At-will employment language',
+      'Non-compete jurisdiction-valid',
+      'IP assignment included',
+      'Severance terms standard',
+      'Arbitration clause'
+    ],
+    insights: [
+      { text: '40 employment agreements may be unenforceable (FTC ruling)', alert: true },
+      { text: '12 employment agreements expire this quarter', alert: false },
+      { text: 'Average time-to-sign: 1.4 days', alert: false },
+      { text: '6 non-competes need state-law review', alert: true }
+    ]
+  },
+  {
+    type: 'SaaS Subscription',
+    fullName: 'SaaS Subscription Agreement',
+    sources: ['Salesforce', 'Email', 'HubSpot'],
+    teams: ['Sales', 'Procurement'],
+    rules: [
+      'SLA ≥ 99.9% uptime',
+      'Data residency US/EU',
+      'Termination: 30 days notice',
+      'DPA attached',
+      'Security questionnaire complete'
+    ],
+    insights: [
+      { text: '23 SaaS contracts up for renegotiation', alert: false },
+      { text: 'Average discount: 14% on multi-year deals', alert: false },
+      { text: '$1.8M total SaaS spend YTD', alert: false },
+      { text: '8 vendors missing SLA targets last 90 days', alert: true }
+    ]
+  },
+  {
+    type: 'Vendor Agreement',
+    fullName: 'Vendor & Supplier Agreement',
+    sources: ['Email', 'Slack', 'HubSpot'],
+    teams: ['Procurement', 'Finance'],
+    rules: [
+      'Insurance ≥ $2M coverage',
+      'Net 30 payment terms',
+      'Right to audit',
+      'Confidentiality clause',
+      'Force majeure standard'
+    ],
+    insights: [
+      { text: '67 vendor contracts due for renewal', alert: false },
+      { text: '9 vendors lack updated COI', alert: true },
+      { text: 'Average vendor onboarding: 4.2 days', alert: false },
+      { text: 'Top spend categories this quarter', alert: false }
+    ]
+  },
+  {
+    type: 'SOW',
+    fullName: 'Statement of Work',
+    sources: ['Salesforce', 'Email', 'Slack'],
+    teams: ['Sales', 'Procurement'],
+    rules: [
+      'References parent MSA',
+      'Acceptance criteria defined',
+      'Change-order process clear',
+      'Payment milestones',
+      'Deliverables specified'
+    ],
+    insights: [
+      { text: '34 active SOWs across 12 projects', alert: false },
+      { text: 'Average overrun: 8% on T&M SOWs', alert: false },
+      { text: '$3.1M billed via SOWs this quarter', alert: false }
+    ]
+  },
+  {
+    type: 'Order Form',
+    fullName: 'Sales Order Form',
+    sources: ['Salesforce', 'HubSpot', 'DocuSign'],
+    teams: ['Sales'],
+    rules: [
+      'Pricing matches quote',
+      'Approved discount tier',
+      'Term clearly defined',
+      'Billing contact present',
+      'Net 30 terms'
+    ],
+    insights: [
+      { text: '$2.4M in order forms processed this month', alert: false },
+      { text: 'Win rate: 68% on this template', alert: false },
+      { text: '47 deals in flight via order forms', alert: false }
+    ]
+  },
+  {
+    type: 'DPA',
+    fullName: 'Data Processing Agreement',
+    sources: ['Email', 'Salesforce'],
+    teams: ['Procurement', 'Sales', 'HR'],
+    rules: [
+      'GDPR Art. 28 compliance',
+      'Sub-processor list current',
+      'SCCs included',
+      'Breach notification: 72h',
+      'Data deletion on termination'
+    ],
+    insights: [
+      { text: '5 vendors with outdated SCCs (post-Schrems II)', alert: true },
+      { text: '180 active DPAs across vendors', alert: false },
+      { text: '12 DPAs need refresh this quarter', alert: false }
+    ]
+  },
+  {
+    type: 'Contractor Agreement',
+    fullName: 'Independent Contractor Agreement',
+    sources: ['Email', 'HubSpot', 'BambooHR'],
+    teams: ['HR', 'Procurement'],
+    rules: [
+      'IRS classification factors met',
+      'IP work-for-hire included',
+      'No employee benefits',
+      'Termination: 30 days notice'
+    ],
+    insights: [
+      { text: '9 contractors approaching 1099/W-2 risk', alert: true },
+      { text: '47 active contractors across regions', alert: false },
+      { text: 'Average contractor onboarding: 6 days', alert: false }
+    ]
+  },
+  {
+    type: 'License Agreement',
+    fullName: 'Software License Agreement',
+    sources: ['Salesforce', 'Email'],
+    teams: ['Sales', 'Procurement'],
+    rules: [
+      'Scope of license clear',
+      'Audit rights ≤ once/year',
+      'Warranty disclaimer present',
+      'Restrictions enumerated'
+    ],
+    insights: [
+      { text: '29 software licenses in effect', alert: false },
+      { text: '$340K spent on licensing YTD', alert: false },
+      { text: '3 licenses approaching audit window', alert: true }
+    ]
+  },
+  {
+    type: 'Reseller Agreement',
+    fullName: 'Partnership / Reseller Agreement',
+    sources: ['Salesforce', 'Email', 'HubSpot'],
+    teams: ['Sales'],
+    rules: [
+      'Revenue split defined',
+      'Territory boundaries clear',
+      'Marketing rights specified',
+      'Termination clause present',
+      'Performance minimums'
+    ],
+    insights: [
+      { text: '8 active reseller partners', alert: false },
+      { text: 'Reseller revenue up 23% YoY', alert: false },
+      { text: '$890K YTD via channel partners', alert: false }
+    ]
+  },
+  {
+    type: 'Lease Agreement',
+    fullName: 'Real Estate Lease',
+    sources: ['Email', 'DocuSign'],
+    teams: ['Finance', 'Procurement'],
+    rules: [
+      'Lease term & renewal clear',
+      'CAM charges defined',
+      'Subletting permitted',
+      'Default cure period',
+      'Insurance requirements'
+    ],
+    insights: [
+      { text: '3 office leases expiring 2026', alert: false },
+      { text: 'Total real estate spend: $4.2M annually', alert: false },
+      { text: '1 lease auto-renews in 45 days', alert: true }
+    ]
+  },
+  {
+    type: 'Severance Agreement',
+    fullName: 'Severance & Release Agreement',
+    sources: ['Email', 'BambooHR'],
+    teams: ['HR'],
+    rules: [
+      'ADEA waiver (if 40+)',
+      '7-day revocation period',
+      'Consideration adequate',
+      'Non-disparagement clause',
+      'Final wages calculated'
+    ],
+    insights: [
+      { text: '6 severance agreements pending review', alert: false },
+      { text: '2 missing OWBPA disclosures', alert: true },
+      { text: 'Average severance: 8 weeks of pay', alert: false }
+    ]
+  }
+];
+
+// ============================================================
+//  HELPERS
+// ============================================================
+const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+const sample = (arr, n) => [...arr].sort(() => Math.random() - 0.5).slice(0, n);
+
+// Icons include explicit width/height for Safari (inline SVG inside flex containers needs them)
+const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7L6 10.5L11.5 4"/></svg>`;
+const ICON_X = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3.5 3.5L10.5 10.5"/><path d="M10.5 3.5L3.5 10.5"/></svg>`;
+const ICON_ALERT = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M7 1.5L13 12.5H1L7 1.5Z"/><path d="M7 6V8.5" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.6" fill="currentColor" stroke="none"/></svg>`;
+
+// ============================================================
+//  CARD BUILDERS
+// ============================================================
+function buildIntakeCard(c) {
+  const source = rand(c.sources);
+  const team = rand(c.teams);
+  return {
+    cls: '',
+    html: `
+      <div class="eyebrow"><span class="dot"></span>INTAKE</div>
+      <div class="ctype-row">
+        <div class="ctype">${c.type}</div>
+        <div class="full-name">${c.fullName}</div>
+      </div>
+      <div class="row"><span class="label">Source</span><span class="val">${source}</span></div>
+      <div class="row"><span class="label">Team</span><span class="val">${team}</span></div>
+    `
+  };
+}
+
+function buildReviewCard(c) {
+  const r = Math.random();
+  if (r < 0.18) {
+    return {
+      cls: 'badge pass',
+      html: `<div class="badge-row"><span class="icon">${ICON_CHECK}</span> All Pass</div>`
+    };
+  }
+  if (r < 0.32) {
+    return {
+      cls: 'badge redlining',
+      html: `<div class="badge-row"><span class="icon">${ICON_X}</span> Redlining ${c.type}…</div>`
+    };
+  }
+  const n = 3 + Math.floor(Math.random() * 2);
+  const chosen = sample(c.rules, Math.min(n, c.rules.length));
+  const failIdx = Math.random() < 0.55 ? Math.floor(Math.random() * chosen.length) : -1;
+  const rows = chosen.map((rule, i) => {
+    const pass = i !== failIdx;
+    return `<div class="rule ${pass ? 'pass' : 'fail'}"><span class="icon">${pass ? ICON_CHECK : ICON_X}</span>${rule}</div>`;
+  }).join('');
+  return {
+    cls: '',
+    html: `
+      <div class="eyebrow"><span class="dot"></span>REVIEW</div>
+      <div class="ctype-row">
+        <div class="ctype">${c.type}</div>
+        <div class="full-name">${c.fullName}</div>
+      </div>
+      ${rows}
+    `
+  };
+}
+
+function buildInsightCard(c) {
+  const ins = rand(c.insights);
+  return {
+    cls: ins.alert ? 'alert' : '',
+    html: `
+      <div class="eyebrow">
+        <span class="dot ${ins.alert ? 'alert' : ''}"></span>
+        ${ins.alert ? 'RISK ALERT' : 'INSIGHT'}
+      </div>
+      <div class="insight-text">
+        ${ins.alert ? `<span style="display:inline-flex;vertical-align:-2px;width:14px;height:14px;color:#fb923c;margin-right:6px;">${ICON_ALERT}</span>` : ''}
+        ${ins.text}
+      </div>
+      <div class="insight-meta">${c.type} · ${c.fullName}</div>
+    `
+  };
+}
+
+// ============================================================
+//  CARD POSITIONING — anchor each slot to its component's screen X
+// ============================================================
+const anchorPoints = {
+  // viewBox coordinates pointing at each component's anchor x
+  intake:  { x: 250 },                  // fan tip
+  review:  { x: 920 },                  // middle of review rect (720 + 400/2)
+  insight: { x: 1800 }                  // cylinder center
+};
+
+function positionCards() {
+  const svg = document.getElementById('canvas');
+  const stage = document.querySelector('.stage');
+  if (!svg || !stage) return;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return;
+  const stageRect = stage.getBoundingClientRect();
+
+  ['intake', 'review', 'insight'].forEach(name => {
+    const slot = document.getElementById(`slot-${name}`);
+    if (!slot) return;
+    // Map anchor's viewBox X to screen X via the SVG's current transform
+    const pt = svg.createSVGPoint();
+    pt.x = anchorPoints[name].x;
+    pt.y = 0;
+    const screenX = pt.matrixTransform(ctm).x;
+    const xInStage = screenX - stageRect.left;
+    const cardW = slot.offsetWidth || 280;
+    const padding = 16;
+
+    // Default: center slot on the anchor
+    let left = xInStage - cardW / 2;
+    // Clamp so the card stays on screen
+    left = Math.max(padding, Math.min(left, stageRect.width - cardW - padding));
+    slot.style.left = `${left}px`;
+  });
+}
+
+// Re-position on load and resize (debounced)
+let _resizeT;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeT);
+  _resizeT = setTimeout(positionCards, 50);
+});
+window.addEventListener('load', positionCards);
+// Initial pass — run after current frame so layout is settled
+requestAnimationFrame(() => requestAnimationFrame(positionCards));
+
+// ============================================================
+//  CARD DISPLAY (one per slot, fades in/out)
+// ============================================================
+const slots = {
+  intake: document.getElementById('slot-intake'),
+  review: document.getElementById('slot-review'),
+  insight: document.getElementById('slot-insight')
+};
+const activeCard = { intake: null, review: null, insight: null };
+const hideTimers = { intake: null, review: null, insight: null };
+
+function showCard(stage, contract) {
+  let built;
+  if (stage === 'intake') built = buildIntakeCard(contract);
+  else if (stage === 'review') built = buildReviewCard(contract);
+  else built = buildInsightCard(contract);
+
+  // Hide ALL existing cards (any stage) — only one card visible at a time
+  ['intake', 'review', 'insight'].forEach(s => {
+    if (activeCard[s]) {
+      const old = activeCard[s];
+      old.classList.remove('show');
+      setTimeout(() => old.remove(), 350);
+      activeCard[s] = null;
+    }
+    if (hideTimers[s]) {
+      clearTimeout(hideTimers[s]);
+      hideTimers[s] = null;
+    }
+  });
+
+  const card = document.createElement('div');
+  card.className = `card ${built.cls}`;
+  card.innerHTML = built.html;
+  slots[stage].appendChild(card);
+  activeCard[stage] = card;
+  requestAnimationFrame(() => {
+    positionCards(); // re-anchor in case slot width changed (badge vs full card)
+    requestAnimationFrame(() => card.classList.add('show'));
+  });
+
+  // Hide before the next beam arrives (beam interval is 5500 ms)
+  hideTimers[stage] = setTimeout(() => {
+    if (activeCard[stage] === card) activeCard[stage] = null;
+    card.classList.remove('show');
+    setTimeout(() => card.remove(), 400);
+  }, 4500);
+}
+
+// ============================================================
+//  BEAM ANIMATION
+// ============================================================
+const NS = 'http://www.w3.org/2000/svg';
+const beamsGroup = document.getElementById('beams');
+const reviewRect = document.getElementById('reviewRect');
+const insightCyl = document.getElementById('insightCyl');
+const fanLines = Array.from(document.querySelectorAll('.fanline'));
+
+const FAN_TIP_X = 250;
+const FAN_TIP_Y = 240;
+const PIPE_END_X = 1710;
+
+// Stage X positions on the pipe (after fan)
+const stagePipeX = {
+  intake: FAN_TIP_X + 40,    // just exiting fan into pipe
+  review: 920,                // middle of review rect (720+400/2)
+  insight: 1660               // entering cylinder
+};
+
+// Review rectangle X range
+const reviewBounds = { x1: 720, x2: 1120 };
+
+function shootBeam() {
+  const contract = rand(contractTypes);
+  const stage = rand(['intake', 'review', 'insight']);
+  const useBrand = Math.random() < 0.18;
+
+  // Pick a random fan line
+  const fan = rand(fanLines);
+  const fanStartX = +fan.getAttribute('x1');
+  const fanStartY = +fan.getAttribute('y1');
+
+  // Build path: fan line → pipe to cylinder
+  const pathD = `M ${fanStartX},${fanStartY} L ${FAN_TIP_X},${FAN_TIP_Y} L ${PIPE_END_X},${FAN_TIP_Y}`;
+  const beam = document.createElementNS(NS, 'path');
+  beam.setAttribute('d', pathD);
+  beam.setAttribute('class', useBrand ? 'beam brand' : 'beam');
+  beam.setAttribute('filter', 'url(#beam-glow)');  // Safari-safe glow
+  beamsGroup.appendChild(beam);
+
+  const total = beam.getTotalLength();
+  // Compute fan segment length (so we know when beam transitions to pipe)
+  const fanSegLen = Math.hypot(FAN_TIP_X - fanStartX, FAN_TIP_Y - fanStartY);
+
+  // Pattern: a single dash of `beamLen` followed by a gap of `total`.
+  // Period = total + beamLen, which exactly matches the head's range of motion,
+  // so only ONE dash is ever visible in the path range — no wrap-around fragments.
+  const beamLen = 130;
+  const motion = total + beamLen;          // head travels from 0 to total + beamLen
+  beam.style.strokeDasharray = `${beamLen} ${total}`;
+  beam.style.strokeDashoffset = `${beamLen}`;   // initial: dash sits at [-beamLen, 0], invisible
+
+  // Trigger distances along the path (head's distance from start)
+  const triggerDist = {
+    intake: fanSegLen + (stagePipeX.intake - FAN_TIP_X),
+    review: fanSegLen + (stagePipeX.review - FAN_TIP_X),
+    insight: fanSegLen + (stagePipeX.insight - FAN_TIP_X)
+  };
+
+  const duration = 3200;
+  const start = performance.now();
+  let cardTriggered = false;
+  let inReview = false;
+  let inInsight = false;
+
+  function tick(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+    // Head position along the path: 0 → total + beamLen (exits past the end)
+    const head = eased * motion;
+    // Offset = beamLen − head; goes from +beamLen (hidden before start) to −total (hidden past end)
+    beam.style.strokeDashoffset = `${beamLen - head}`;
+
+    if (!cardTriggered && head >= triggerDist[stage]) {
+      cardTriggered = true;
+      showCard(stage, contract);
+    }
+
+    // Highlight review rectangle when beam head is inside (in pipe coords)
+    if (head >= fanSegLen) {
+      const headPipeX = FAN_TIP_X + (head - fanSegLen);
+      if (!inReview && headPipeX >= reviewBounds.x1 && headPipeX <= reviewBounds.x2) {
+        inReview = true;
+        reviewRect.setAttribute('filter', 'url(#comp-glow)');
+      } else if (inReview && headPipeX > reviewBounds.x2) {
+        inReview = false;
+        setTimeout(() => reviewRect.removeAttribute('filter'), 250);
+      }
+      if (!inInsight && headPipeX >= 1660) {
+        inInsight = true;
+        insightCyl.setAttribute('filter', 'url(#comp-glow)');
+        setTimeout(() => insightCyl.removeAttribute('filter'), 800);
+      }
+    }
+
+    if (t < 1) requestAnimationFrame(tick);
+    else beam.remove();
+  }
+  requestAnimationFrame(tick);
+}
+
+// ============================================================
+//  MAIN LOOP — one beam at a time, regular cadence
+// ============================================================
+const BEAM_INTERVAL_MS = 5500; // fixed gap between beam starts
+function loop() {
+  shootBeam();
+  setTimeout(loop, BEAM_INTERVAL_MS);
+}
+setTimeout(loop, 800);
+</script>
+</body>
+</html>
