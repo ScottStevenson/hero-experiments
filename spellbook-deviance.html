@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spellbook — Identify deviance, conform to standards</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
+
+  :root {
+    --brand: #FF4716;
+    --pad-x: clamp(1.5rem, 4vw, 4rem);
+  }
+
+  .stage {
+    position: relative;
+    width: 100vw;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(3rem, 8vh, 6rem) var(--pad-x);
+    gap: clamp(2.5rem, 6vh, 5rem);
+  }
+
+  .eyebrow {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.55);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: color 0.3s ease;
+    min-height: 16px;
+  }
+  .eyebrow .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--brand);
+    box-shadow: 0 0 8px var(--brand);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+  .eyebrow.resolved .dot { background: #fff; box-shadow: 0 0 8px #fff; }
+
+  h1 {
+    font-size: clamp(1.7rem, 4vw, 3.4rem);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.045em;
+    text-align: center;
+    max-width: 1100px;
+    margin: 14px 0 0;
+    color: #fff;
+  }
+
+  .grid-stage {
+    position: relative;
+    width: 100%;
+    max-width: 1500px;
+    aspect-ratio: 1400 / 500;
+    flex: 0 0 auto;
+  }
+  .grid-stage svg { width: 100%; height: 100%; display: block; }
+
+  /* Per-dot states. Glow is applied via SVG <filter> elements (set as the
+     `filter` attribute by JS), not CSS drop-shadow — Safari is unreliable
+     with CSS filters on inline SVG. */
+  .dot-cell { fill: rgba(255,255,255,0.55); transition: fill 0.22s cubic-bezier(.4,.7,.2,1); }
+  .dot-cell.risk { fill: var(--brand); }
+  .dot-cell.flash { fill: #fff; }
+  .dot-cell.done { fill: #fff; }
+  .dots.all-bright .dot-cell { fill: #fff; }
+
+  /* Footer counter — subtle status indicator */
+  .meter {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase;
+    margin-top: clamp(1rem, 3vh, 2rem);
+    min-height: 18px;
+  }
+  .meter .num { color: #fff; font-weight: 500; min-width: 38px; text-align: right; }
+  .meter .sep { width: 12px; height: 1px; background: rgba(255,255,255,0.3); }
+  .meter .lbl { color: var(--brand); transition: color 0.3s ease; }
+  .meter.resolved .lbl { color: #fff; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div style="text-align:center;">
+    <div class="eyebrow" id="eyebrow"><span class="dot"></span><span id="eyebrowText">SCANNING</span></div>
+    <h1>Identify deviance in your contracts and conform to your standards automatically</h1>
+  </div>
+
+  <div class="grid-stage">
+    <svg id="gridSvg" viewBox="0 0 1400 500" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <filter id="glow-flash" x="-300%" y="-300%" width="700%" height="700%" color-interpolation-filters="sRGB">
+          <feGaussianBlur stdDeviation="2" result="b1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b2"/>
+          <feMerge>
+            <feMergeNode in="b2"/>
+            <feMergeNode in="b1"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        <filter id="glow-done" x="-200%" y="-200%" width="500%" height="500%" color-interpolation-filters="sRGB">
+          <feGaussianBlur stdDeviation="1.5" result="b1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b2"/>
+          <feMerge>
+            <feMergeNode in="b2"/>
+            <feMergeNode in="b1"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        <filter id="glow-all" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+          <feGaussianBlur stdDeviation="3" result="b1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b2"/>
+          <feMerge>
+            <feMergeNode in="b2"/>
+            <feMergeNode in="b1"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      <g id="dots" class="dots"></g>
+    </svg>
+  </div>
+
+  <div class="meter" id="meter">
+    <span class="lbl" id="meterLabel">Risks identified</span>
+    <span class="sep"></span>
+    <span class="num" id="meterNum">0</span>
+  </div>
+</div>
+
+<script>
+(function() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const dotsG = document.getElementById('dots');
+  const eyebrow = document.getElementById('eyebrow');
+  const eyebrowText = document.getElementById('eyebrowText');
+  const meter = document.getElementById('meter');
+  const meterLabel = document.getElementById('meterLabel');
+  const meterNum = document.getElementById('meterNum');
+
+  // ====== Grid generation — parallelogram of small squares ======
+  const COLS = 30;
+  const ROWS = 18;
+  const DOT = 5;
+  const X_SPACE = 28;
+  const Y_SPACE = 24;
+  const SLANT = 26;
+
+  const totalW = (COLS - 1) * X_SPACE + (ROWS - 1) * SLANT + DOT;
+  const totalH = (ROWS - 1) * Y_SPACE + DOT;
+  const startX = (1400 - totalW) / 2;
+  const startY = (500 - totalH) / 2;
+
+  const dots = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = startX + c * X_SPACE + r * SLANT;
+      const y = startY + r * Y_SPACE;
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', y);
+      rect.setAttribute('width', DOT);
+      rect.setAttribute('height', DOT);
+      rect.setAttribute('class', 'dot-cell');
+      dotsG.appendChild(rect);
+      dots.push(rect);
+    }
+  }
+
+  // ====== Animation cycle ======
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
+  let cancelled = false;
+
+  function setEyebrow(text, resolved) {
+    eyebrowText.textContent = text;
+    eyebrow.classList.toggle('resolved', !!resolved);
+  }
+  function setMeter(label, num, resolved) {
+    meterLabel.textContent = label;
+    meterNum.textContent = num;
+    meter.classList.toggle('resolved', !!resolved);
+  }
+
+  async function cycle() {
+    if (cancelled) return;
+
+    // ---- Reset ----
+    dots.forEach(d => {
+      d.setAttribute('class', 'dot-cell');
+      d.removeAttribute('filter');
+    });
+    dotsG.setAttribute('class', 'dots');
+    dotsG.removeAttribute('filter');
+    setEyebrow('SCANNING', false);
+    setMeter('Risks identified', '0', false);
+    await sleep(900);
+
+    // ---- Phase 1: discover risks (orange) ----
+    const RISK_PCT = 0.15;
+    const riskCount = Math.floor(dots.length * RISK_PCT);
+    const riskIndices = shuffle([...Array(dots.length).keys()]).slice(0, riskCount);
+    const riskDots = riskIndices.map(i => dots[i]);
+
+    setEyebrow('SCANNING · ' + dots.length + ' CLAUSES', false);
+    let found = 0;
+    for (const d of riskDots) {
+      if (cancelled) return;
+      d.setAttribute('class', 'dot-cell risk');
+      found++;
+      meterNum.textContent = found;
+      await sleep(18);
+    }
+    setEyebrow(riskCount + ' DEVIATIONS FLAGGED', false);
+    await sleep(1400);
+
+    // ---- Phase 2: resolve risks one by one (each flashes white) ----
+    setMeter('Resolving', riskCount, false);
+    let remaining = riskCount;
+    for (const d of riskDots) {
+      if (cancelled) return;
+      d.setAttribute('class', 'dot-cell flash');
+      d.setAttribute('filter', 'url(#glow-flash)');
+      // After the flash, settle to plain white ("done") with a softer glow
+      setTimeout(() => {
+        if (d.getAttribute('class') === 'dot-cell flash') {
+          d.setAttribute('class', 'dot-cell done');
+          d.setAttribute('filter', 'url(#glow-done)');
+        }
+      }, 220);
+      remaining--;
+      meterNum.textContent = remaining;
+      await sleep(60);
+    }
+
+    // Brief pause before celebratory all-flash
+    await sleep(450);
+
+    // ---- Phase 3: all dots flash bright white with a group glow ----
+    setEyebrow('CONFORMED', true);
+    setMeter('All clauses conformed', riskCount, true);
+    // Clear individual filters so they don't compound under the group filter
+    dots.forEach(d => d.removeAttribute('filter'));
+    dotsG.setAttribute('class', 'dots all-bright');
+    dotsG.setAttribute('filter', 'url(#glow-all)');
+    await sleep(1600);
+
+    // ---- Pause before next cycle ----
+    await sleep(1800);
+    cycle();
+  }
+
+  // Pause when tab hidden, resume when visible
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      cancelled = true;
+    } else if (cancelled) {
+      cancelled = false;
+      cycle();
+    }
+  });
+
+  cycle();
+})();
+</script>
+</body>
+</html>
