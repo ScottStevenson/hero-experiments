@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spellbook — Contract Pipeline (slow narrative)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: #fff; }
+
+  .stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    overflow: hidden;
+  }
+
+  .schematic {
+    position: absolute;
+    top: 32%;
+    left: 0;
+    right: 0;
+    bottom: 5%;
+  }
+  .schematic svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .line { stroke: #ffffff; stroke-width: 1; fill: none; stroke-linecap: square; }
+  .label-box { fill: #000; stroke: #ffffff; stroke-width: 1; }
+  .label-text { fill: #ffffff; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 14px; letter-spacing: 0.02em; }
+
+  .review-rect, .cyl { transition: opacity 0.25s ease; }
+
+  .beam {
+    stroke: #ffffff;
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+  }
+  .beam.brand { stroke: #FF4716; }
+
+  .cards-layer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 4%;
+    height: 26%;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .slot {
+    position: absolute;
+    bottom: 0;
+    width: clamp(220px, 22vw, 320px);
+    display: flex;
+    align-items: flex-end;
+    pointer-events: auto;
+  }
+
+  .card {
+    width: 100%;
+    background: rgba(8, 8, 8, 0.88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 0;
+    padding: 16px 18px;
+    color: #fff;
+    font-size: 13px;
+    line-height: 1.5;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.4s ease, transform 0.5s cubic-bezier(.2,.7,.2,1), border-color 0.25s ease;
+  }
+  .card.show { opacity: 1; transform: translateY(0); }
+
+  .card .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.55);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .card .eyebrow .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: #FF4716;
+    box-shadow: 0 0 8px #FF4716;
+  }
+  .card .eyebrow .dot.alert { background: #FF4716; box-shadow: 0 0 8px #FF4716; }
+
+  .card .ctype-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 10px;
+  }
+  .card .ctype { font-size: 16px; font-weight: 500; letter-spacing: -0.015em; }
+  .card .full-name { font-size: 11px; color: rgba(255,255,255,0.5); }
+  .card .clause-tag { font-size: 11px; color: rgba(255,255,255,0.55); margin-left: 6px; font-weight: 400; letter-spacing: 0; }
+
+  .card .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+    font-size: 13px;
+  }
+  .card .row .label {
+    color: rgba(255,255,255,0.55);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    min-width: 64px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .card .row .val { color: #fff; }
+
+  .rule {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+    font-size: 12.5px;
+  }
+  .rule .icon {
+    width: 14px; height: 14px;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .card .icon svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .rule.pass { color: rgba(255,255,255,0.95); }
+  .rule.pass .icon { color: #1ED760; }
+  .rule.fail { color: rgba(255,255,255,0.95); }
+  .rule.fail .icon { color: #FF4716; }
+
+  /* Redlining card */
+  .card.redline { border-color: rgba(255, 71, 22, 0.4); }
+  .redline-quote {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.92);
+    font-style: italic;
+    margin-top: 4px;
+  }
+  .rl-del {
+    color: #FF4716;
+    text-decoration: line-through;
+    text-decoration-color: #FF4716;
+    text-decoration-thickness: 1.5px;
+  }
+  .rl-ins {
+    color: #1ED760;
+    background: rgba(30, 215, 96, 0.08);
+    padding: 0 2px;
+    margin: 0 1px;
+  }
+
+  .insight-text {
+    font-size: 14px;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
+    color: #fff;
+  }
+  .insight-meta {
+    margin-top: 12px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.45);
+    letter-spacing: 0.04em;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .card.alert { border-color: rgba(255, 71, 22, 0.35); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="cards-layer">
+    <div class="slot" id="slot-intake"></div>
+    <div class="slot" id="slot-review"></div>
+    <div class="slot" id="slot-insight"></div>
+  </div>
+
+  <div class="schematic">
+    <svg id="canvas" viewBox="0 0 1920 700" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <filter id="beam-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="2" result="b1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b2"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="b3"/>
+          <feMerge>
+            <feMergeNode in="b3"/>
+            <feMergeNode in="b2"/>
+            <feMergeNode in="b1"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        <filter id="comp-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3" result="cb1"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="cb2"/>
+          <feMerge>
+            <feMergeNode in="cb2"/>
+            <feMergeNode in="cb1"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+
+      <g id="intake-fan">
+        <line class="line fanline" x1="60" y1="60"  x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="105" x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="150" x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="195" x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="240" x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="285" x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="330" x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="375" x2="250" y2="240"/>
+        <line class="line fanline" x1="60" y1="420" x2="250" y2="240"/>
+      </g>
+
+      <line class="line" id="pipe" x1="250" y1="240" x2="1710" y2="240"/>
+
+      <rect class="line review-rect" id="reviewRect"
+            x="720" y="120" width="400" height="240" fill="none"/>
+
+      <g class="cyl" id="insightCyl">
+        <ellipse class="line" cx="1800" cy="120" rx="90" ry="26"/>
+        <line class="line" x1="1710" y1="120" x2="1710" y2="360"/>
+        <line class="line" x1="1890" y1="120" x2="1890" y2="360"/>
+        <ellipse class="line" cx="1800" cy="360" rx="90" ry="26"/>
+      </g>
+
+      <g id="labels">
+        <rect class="label-box" x="290" y="190" width="76" height="32" rx="0"/>
+        <text class="label-text" x="328" y="210" text-anchor="middle">Intake</text>
+        <rect class="label-box" x="884" y="50" width="80" height="32" rx="0"/>
+        <text class="label-text" x="924" y="70" text-anchor="middle">Review</text>
+        <rect class="label-box" x="1762" y="430" width="76" height="32" rx="0"/>
+        <text class="label-text" x="1800" y="450" text-anchor="middle">Insight</text>
+      </g>
+
+      <g id="beams"></g>
+    </svg>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+//  CONTRACT TYPE DATASET (same as the original)
+// ============================================================
+const contractTypes = [
+  { type:'MSA', fullName:'Master Services Agreement', sources:['Salesforce','Email','HubSpot'], teams:['Sales','Procurement'], rules:['Mutual indemnification','Liability cap ≤ 12 mo fees','Auto-renewal disabled','Delaware governing law','Termination for convenience: 30d'], insights:[{text:'Which MSAs expire this month?',alert:false},{text:'12 MSAs renew in next 30 days',alert:false},{text:'Average MSA cycle time: 8 days',alert:false},{text:'$4.2M in active MSA value across 38 vendors',alert:false},{text:'5 MSAs flagged for renegotiation',alert:true}], redlines:[{clause:'Liability Cap',text:'Liability shall not exceed [del]fees paid in prior 6 months[/del] [ins]twelve (12) months of fees[/ins].'},{clause:'Termination',text:'Either party may terminate [del]for any reason[/del] [ins]for material breach upon 30 days notice[/ins].'},{clause:'Governing Law',text:'Governed by laws of [del]California[/del] [ins]Delaware[/ins].'}] },
+  { type:'NDA', fullName:'Non-Disclosure Agreement', sources:['Email','Microsoft Teams','Slack','Salesforce','DocuSign'], teams:['Sales','Procurement','HR'], rules:['Mutual confidentiality','Term ≤ 3 years','No non-solicit clause','Standard jurisdiction','Definition of confidential info'], insights:[{text:'847 active NDAs in your repository',alert:false},{text:'NDAs averaged 2.1 days to close last quarter',alert:false},{text:'Top 5 NDA counterparties this month',alert:false},{text:'14 NDAs need renewal this quarter',alert:false}], redlines:[{clause:'Term',text:'Confidentiality obligations survive for [del]ten (10) years[/del] [ins]three (3) years[/ins] post-termination.'},{clause:'Definition',text:'Confidential Info means [del]any information disclosed[/del] [ins]information marked or designated as confidential[/ins].'},{clause:'Carve-out',text:'Recipient may disclose information [ins]required by law upon prior notice to Discloser[/ins].'}] },
+  { type:'Employment Agreement', fullName:'Employment Agreement', sources:['HubSpot','Email','BambooHR'], teams:['HR'], rules:['At-will employment language','Non-compete jurisdiction-valid','IP assignment included','Severance terms standard','Arbitration clause'], insights:[{text:'40 employment agreements may be unenforceable (FTC ruling)',alert:true},{text:'12 employment agreements expire this quarter',alert:false},{text:'Average time-to-sign: 1.4 days',alert:false},{text:'6 non-competes need state-law review',alert:true}], redlines:[{clause:'Term',text:'Employment is [del]for a fixed term of two (2) years[/del] [ins]at-will and may be terminated by either party[/ins].'},{clause:'Non-Compete',text:'Non-compete period of [del]twenty-four (24) months[/del] [ins]twelve (12) months, direct competitors only[/ins].'},{clause:'IP Assignment',text:'All work product shall [ins]be deemed work-for-hire and assigned to Company[/ins].'}] },
+  { type:'SaaS Subscription', fullName:'SaaS Subscription Agreement', sources:['Salesforce','Email','HubSpot'], teams:['Sales','Procurement'], rules:['SLA ≥ 99.9% uptime','Data residency US/EU','Termination: 30 days notice','DPA attached','Security questionnaire complete'], insights:[{text:'23 SaaS contracts up for renegotiation',alert:false},{text:'Average discount: 14% on multi-year deals',alert:false},{text:'$1.8M total SaaS spend YTD',alert:false},{text:'8 vendors missing SLA targets last 90 days',alert:true}], redlines:[{clause:'SLA',text:'Provider warrants [del]99.5% uptime[/del] [ins]99.9% uptime measured monthly[/ins].'},{clause:'Data Use',text:'[del]Customer data may be used for product improvement.[/del] [ins]Customer data shall be used solely for service delivery.[/ins]'},{clause:'Termination',text:'Termination requires [del]180 days written notice[/del] [ins]30 days notice with pro-rata refund[/ins].'}] },
+  { type:'Vendor Agreement', fullName:'Vendor & Supplier Agreement', sources:['Email','Slack','HubSpot'], teams:['Procurement','Finance'], rules:['Insurance ≥ $2M coverage','Net 30 payment terms','Right to audit','Confidentiality clause','Force majeure standard'], insights:[{text:'67 vendor contracts due for renewal',alert:false},{text:'9 vendors lack updated COI',alert:true},{text:'Average vendor onboarding: 4.2 days',alert:false},{text:'Top spend categories this quarter',alert:false}], redlines:[{clause:'Payment',text:'Payment terms shall be [del]Net 60[/del] [ins]Net 30 from invoice receipt[/ins].'},{clause:'Insurance',text:'Vendor maintains insurance of at least [del]$500,000[/del] [ins]$2,000,000 per occurrence[/ins].'},{clause:'Audit',text:'Customer reserves [ins]right to audit records once annually upon 5 days notice[/ins].'}] },
+  { type:'SOW', fullName:'Statement of Work', sources:['Salesforce','Email','Slack'], teams:['Sales','Procurement'], rules:['References parent MSA','Acceptance criteria defined','Change-order process clear','Payment milestones','Deliverables specified'], insights:[{text:'34 active SOWs across 12 projects',alert:false},{text:'Average overrun: 8% on T&M SOWs',alert:false},{text:'$3.1M billed via SOWs this quarter',alert:false}], redlines:[{clause:'Fees',text:'Total fees: [del]$85,000 firm fixed price[/del] [ins]$95,000 not-to-exceed, T&M[/ins].'},{clause:'Change Orders',text:'Scope changes [ins]require a written change order signed by both parties[/ins].'},{clause:'Delivery',text:'Delivery date: [del]March 15, 2026[/del] [ins]April 30, 2026[/ins].'}] },
+  { type:'Order Form', fullName:'Sales Order Form', sources:['Salesforce','HubSpot','DocuSign'], teams:['Sales'], rules:['Pricing matches quote','Approved discount tier','Term clearly defined','Billing contact present','Net 30 terms'], insights:[{text:'$2.4M in order forms processed this month',alert:false},{text:'Win rate: 68% on this template',alert:false},{text:'47 deals in flight via order forms',alert:false}], redlines:[{clause:'Term',text:'Subscription term: [del]36 months auto-renewing[/del] [ins]24 months, no auto-renewal[/ins].'},{clause:'Discount',text:'Discount: [del]15% off list[/del] [ins]22% off list (executive approval attached)[/ins].'},{clause:'Overage',text:'Usage beyond plan [ins]shall be credited at 80% of overage fees[/ins].'}] },
+  { type:'DPA', fullName:'Data Processing Agreement', sources:['Email','Salesforce'], teams:['Procurement','Sales','HR'], rules:['GDPR Art. 28 compliance','Sub-processor list current','SCCs included','Breach notification: 72h','Data deletion on termination'], insights:[{text:'5 vendors with outdated SCCs (post-Schrems II)',alert:true},{text:'180 active DPAs across vendors',alert:false},{text:'12 DPAs need refresh this quarter',alert:false}], redlines:[{clause:'Sub-Processors',text:'Sub-processors require [del]30 days notice to Customer[/del] [ins]written approval prior to engagement[/ins].'},{clause:'Retention',text:'Personal data retained for [del]7 years post-termination[/del] [ins]30 days, then permanently deleted[/ins].'},{clause:'Transfers',text:'Cross-border transfers shall use [ins]EU Standard Contractual Clauses (2021)[/ins].'}] },
+  { type:'Contractor Agreement', fullName:'Independent Contractor Agreement', sources:['Email','HubSpot','BambooHR'], teams:['HR','Procurement'], rules:['IRS classification factors met','IP work-for-hire included','No employee benefits','Termination: 30 days notice'], insights:[{text:'9 contractors approaching 1099/W-2 risk',alert:true},{text:'47 active contractors across regions',alert:false},{text:'Average contractor onboarding: 6 days',alert:false}], redlines:[{clause:'Classification',text:'Worker shall be classified as [del]employee with full benefits[/del] [ins]independent contractor (1099)[/ins].'},{clause:'IP Assignment',text:'All deliverables [ins]shall be work-for-hire and assigned to Company upon payment[/ins].'},{clause:'Termination',text:'Either party may terminate with [del]14 days notice[/del] [ins]30 days written notice[/ins].'}] },
+  { type:'License Agreement', fullName:'Software License Agreement', sources:['Salesforce','Email'], teams:['Sales','Procurement'], rules:['Scope of license clear','Audit rights ≤ once/year','Warranty disclaimer present','Restrictions enumerated'], insights:[{text:'29 software licenses in effect',alert:false},{text:'$340K spent on licensing YTD',alert:false},{text:'3 licenses approaching audit window',alert:true}], redlines:[{clause:'Scope',text:'License granted on [del]exclusive, perpetual basis[/del] [ins]non-exclusive, three-year term[/ins].'},{clause:'Audit',text:'Audit rights: [del]quarterly with 24-hour notice[/del] [ins]annually with 30 days written notice[/ins].'},{clause:'Restrictions',text:'Licensee shall not [ins]reverse engineer, sublicense, or transfer without written consent[/ins].'}] },
+  { type:'Reseller Agreement', fullName:'Partnership / Reseller Agreement', sources:['Salesforce','Email','HubSpot'], teams:['Sales'], rules:['Revenue split defined','Territory boundaries clear','Marketing rights specified','Termination clause present','Performance minimums'], insights:[{text:'8 active reseller partners',alert:false},{text:'Reseller revenue up 23% YoY',alert:false},{text:'$890K YTD via channel partners',alert:false}], redlines:[{clause:'Revenue Split',text:'Revenue split: [del]50/50 on all bookings[/del] [ins]70/30 in our favor on net new revenue[/ins].'},{clause:'Territory',text:'Territory: [del]Worldwide exclusive[/del] [ins]North America only, with ROFR for EMEA[/ins].'},{clause:'Minimums',text:'Reseller shall achieve [ins]minimum quarterly bookings of $50,000[/ins].'}] },
+  { type:'Lease Agreement', fullName:'Real Estate Lease', sources:['Email','DocuSign'], teams:['Finance','Procurement'], rules:['Lease term & renewal clear','CAM charges defined','Subletting permitted','Default cure period','Insurance requirements'], insights:[{text:'3 office leases expiring 2026',alert:false},{text:'Total real estate spend: $4.2M annually',alert:false},{text:'1 lease auto-renews in 45 days',alert:true}], redlines:[{clause:'Term',text:'Lease term: [del]10 years with no termination right[/del] [ins]5 years with 12-month early termination option[/ins].'},{clause:'Escalation',text:'Annual escalation: [del]CPI uncapped[/del] [ins]CPI capped at 3% per year[/ins].'},{clause:'TI Allowance',text:'Tenant improvements [ins]allowance of $40 per square foot included[/ins].'}] },
+  { type:'Severance Agreement', fullName:'Severance & Release Agreement', sources:['Email','BambooHR'], teams:['HR'], rules:['ADEA waiver (if 40+)','7-day revocation period','Consideration adequate','Non-disparagement clause','Final wages calculated'], insights:[{text:'6 severance agreements pending review',alert:false},{text:'2 missing OWBPA disclosures',alert:true},{text:'Average severance: 8 weeks of pay',alert:false}], redlines:[{clause:'Severance',text:'Severance pay: [del]4 weeks of base salary[/del] [ins]12 weeks of base salary plus pro-rated bonus[/ins].'},{clause:'Release',text:'Release covers [del]all claims known and unknown forever[/del] [ins]known claims as of effective date only[/ins].'},{clause:'ADEA',text:'Employee acknowledges [ins]a 7-day revocation period as required by ADEA[/ins].'}] }
+];
+
+const rand = a => a[Math.floor(Math.random()*a.length)];
+const sample = (a,n) => [...a].sort(()=>Math.random()-0.5).slice(0,n);
+const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7L6 10.5L11.5 4"/></svg>`;
+const ICON_X = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3.5 3.5L10.5 10.5"/><path d="M10.5 3.5L3.5 10.5"/></svg>`;
+const ICON_ALERT = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M7 1.5L13 12.5H1L7 1.5Z"/><path d="M7 6V8.5" stroke-linecap="round"/><circle cx="7" cy="10.5" r="0.6" fill="currentColor" stroke="none"/></svg>`;
+
+function renderRedline(text) {
+  return text
+    .replace(/\[del\](.*?)\[\/del\]/g, '<span class="rl-del">$1</span>')
+    .replace(/\[ins\](.*?)\[\/ins\]/g, '<span class="rl-ins">$1</span>');
+}
+
+// ============================================================
+//  CARD BUILDERS
+// ============================================================
+function buildIntakeCard(c) {
+  const source = rand(c.sources);
+  const team = rand(c.teams);
+  return {
+    cls: '',
+    html: `
+      <div class="eyebrow"><span class="dot"></span>INTAKE</div>
+      <div class="ctype-row">
+        <div class="ctype">${c.type}</div>
+        <div class="full-name">${c.fullName}</div>
+      </div>
+      <div class="row"><span class="label">Source</span><span class="val">${source}</span></div>
+      <div class="row"><span class="label">Team</span><span class="val">${team}</span></div>
+    `
+  };
+}
+
+function buildReviewCard(c) {
+  const r = Math.random();
+  // ~50% chance: live redlining card with an actual snippet
+  if (r < 0.50 && c.redlines && c.redlines.length) {
+    const rl = rand(c.redlines);
+    return {
+      cls: 'redline',
+      html: `
+        <div class="eyebrow"><span class="dot" style="background:#FF4716;box-shadow:0 0 8px #FF4716;"></span>REDLINING</div>
+        <div class="ctype-row">
+          <div class="ctype">${c.type}<span class="clause-tag">— ${rl.clause}</span></div>
+        </div>
+        <div class="redline-quote">"${renderRedline(rl.text)}"</div>
+      `
+    };
+  }
+  const n = 3 + Math.floor(Math.random() * 2);
+  const chosen = sample(c.rules, Math.min(n, c.rules.length));
+  const failIdx = Math.random() < 0.55 ? Math.floor(Math.random() * chosen.length) : -1;
+  const rows = chosen.map((rule, i) => {
+    const pass = i !== failIdx;
+    return `<div class="rule ${pass ? 'pass' : 'fail'}"><span class="icon">${pass ? ICON_CHECK : ICON_X}</span>${rule}</div>`;
+  }).join('');
+  return {
+    cls: '',
+    html: `
+      <div class="eyebrow"><span class="dot"></span>REVIEW</div>
+      <div class="ctype-row">
+        <div class="ctype">${c.type}</div>
+        <div class="full-name">${c.fullName}</div>
+      </div>
+      ${rows}
+    `
+  };
+}
+
+function buildInsightCard(c) {
+  const ins = rand(c.insights);
+  return {
+    cls: ins.alert ? 'alert' : '',
+    html: `
+      <div class="eyebrow">
+        <span class="dot ${ins.alert ? 'alert' : ''}"></span>
+        ${ins.alert ? 'RISK ALERT' : 'INSIGHT'}
+      </div>
+      <div class="insight-text">
+        ${ins.alert ? `<span style="display:inline-block;vertical-align:-2px;width:14px;height:14px;color:#FF4716;margin-right:6px;">${ICON_ALERT}</span>` : ''}
+        ${ins.text}
+      </div>
+      <div class="insight-meta">${c.type} · ${c.fullName}</div>
+    `
+  };
+}
+
+// ============================================================
+//  CARD POSITIONING
+// ============================================================
+const anchorPoints = {
+  intake:  { x: 250 },
+  review:  { x: 920 },
+  insight: { x: 1800 }
+};
+
+function positionCards() {
+  const svg = document.getElementById('canvas');
+  const stage = document.querySelector('.stage');
+  if (!svg || !stage) return;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return;
+  const stageRect = stage.getBoundingClientRect();
+
+  ['intake', 'review', 'insight'].forEach(name => {
+    const slot = document.getElementById(`slot-${name}`);
+    if (!slot) return;
+    const pt = svg.createSVGPoint();
+    pt.x = anchorPoints[name].x;
+    pt.y = 0;
+    const screenX = pt.matrixTransform(ctm).x;
+    const xInStage = screenX - stageRect.left;
+    const cardW = slot.offsetWidth || 280;
+    const padding = 16;
+    let left = xInStage - cardW / 2;
+    left = Math.max(padding, Math.min(left, stageRect.width - cardW - padding));
+    slot.style.left = `${left}px`;
+  });
+}
+
+let _resizeT;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeT);
+  _resizeT = setTimeout(positionCards, 50);
+});
+window.addEventListener('load', positionCards);
+requestAnimationFrame(() => requestAnimationFrame(positionCards));
+
+// ============================================================
+//  CARD DISPLAY (cumulative — no auto-hide)
+// ============================================================
+const slots = {
+  intake: document.getElementById('slot-intake'),
+  review: document.getElementById('slot-review'),
+  insight: document.getElementById('slot-insight')
+};
+const activeCard = { intake: null, review: null, insight: null };
+
+function showCard(stage, contract) {
+  let built;
+  if (stage === 'intake') built = buildIntakeCard(contract);
+  else if (stage === 'review') built = buildReviewCard(contract);
+  else built = buildInsightCard(contract);
+
+  // Replace existing card in this slot (in case one is leftover)
+  if (activeCard[stage]) {
+    const old = activeCard[stage];
+    old.classList.remove('show');
+    setTimeout(() => old.remove(), 350);
+  }
+
+  const card = document.createElement('div');
+  card.className = `card ${built.cls}`;
+  card.innerHTML = built.html;
+  slots[stage].appendChild(card);
+  activeCard[stage] = card;
+  requestAnimationFrame(() => {
+    positionCards();
+    requestAnimationFrame(() => card.classList.add('show'));
+  });
+}
+
+function hideAllCards() {
+  ['intake', 'review', 'insight'].forEach(s => {
+    if (activeCard[s]) {
+      const old = activeCard[s];
+      old.classList.remove('show');
+      setTimeout(() => { if (old.parentNode) old.remove(); }, 450);
+      activeCard[s] = null;
+    }
+  });
+}
+
+// ============================================================
+//  BEAM ANIMATION (slow narrative — triggers all 3 stages)
+// ============================================================
+const NS = 'http://www.w3.org/2000/svg';
+const beamsGroup = document.getElementById('beams');
+const reviewRect = document.getElementById('reviewRect');
+const insightCyl = document.getElementById('insightCyl');
+const fanLines = Array.from(document.querySelectorAll('.fanline'));
+
+const FAN_TIP_X = 250;
+const FAN_TIP_Y = 240;
+const PIPE_END_X = 1710;
+
+const stagePipeX = {
+  intake:  FAN_TIP_X + 40,
+  review:  920,
+  insight: 1660
+};
+
+const reviewBounds = { x1: 720, x2: 1120 };
+
+const BEAM_DURATION   = 6500;   // 6.5 s for the contract to flow
+const HOLD_AFTER_BEAM = 2500;   // hold all 3 cards visible for 2.5 s
+const FADE_DURATION   = 500;    // card fade-out time
+const PAUSE_BETWEEN   = 900;    // pause before next contract
+
+// Track in-flight beams so we can cancel them cleanly on tab visibility change
+const activeBeams = new Set();
+
+function shootBeam() {
+  // ONE contract for the whole journey — all 3 cards relate to it
+  const contract = rand(contractTypes);
+  const useBrand = Math.random() < 0.18;
+
+  const fan = rand(fanLines);
+  const fanStartX = +fan.getAttribute('x1');
+  const fanStartY = +fan.getAttribute('y1');
+
+  const pathD = `M ${fanStartX},${fanStartY} L ${FAN_TIP_X},${FAN_TIP_Y} L ${PIPE_END_X},${FAN_TIP_Y}`;
+  const beam = document.createElementNS(NS, 'path');
+  beam.setAttribute('d', pathD);
+  beam.setAttribute('class', useBrand ? 'beam brand' : 'beam');
+  beam.setAttribute('filter', 'url(#beam-glow)');
+  beam._cancelled = false;
+  beamsGroup.appendChild(beam);
+  activeBeams.add(beam);
+
+  // Compute path length manually — beam.getTotalLength() can return 0 if
+  // called before layout settles (especially with a filter attached).
+  const fanSegLen = Math.hypot(FAN_TIP_X - fanStartX, FAN_TIP_Y - fanStartY);
+  const pipeSegLen = PIPE_END_X - FAN_TIP_X;
+  const total = fanSegLen + pipeSegLen;
+  const beamLen = 130;
+  const motion = total + beamLen;
+
+  beam.style.strokeDasharray = `${beamLen} ${total}`;
+  beam.style.strokeDashoffset = `${beamLen}`;
+
+  const triggerDist = {
+    intake:  fanSegLen + (stagePipeX.intake  - FAN_TIP_X),
+    review:  fanSegLen + (stagePipeX.review  - FAN_TIP_X),
+    insight: fanSegLen + (stagePipeX.insight - FAN_TIP_X)
+  };
+
+  const start = performance.now();
+  let lastTickTime = start;
+  const triggered = { intake: false, review: false, insight: false };
+  let inReview = false, inInsight = false;
+
+  function cleanup() {
+    activeBeams.delete(beam);
+    if (beam.parentNode) beam.remove();
+  }
+
+  function tick(now) {
+    if (beam._cancelled) { cleanup(); return; }
+
+    // Detect a long pause between frames (tab was backgrounded mid-beam) and
+    // bail out cleanly so we don't trigger all 3 cards in a single frame.
+    if (now - lastTickTime > 1000) { cleanup(); return; }
+    lastTickTime = now;
+
+    const t = Math.min(1, (now - start) / BEAM_DURATION);
+    const head = t * motion;
+    beam.style.strokeDashoffset = `${beamLen - head}`;
+
+    if (!triggered.intake && head >= triggerDist.intake) {
+      triggered.intake = true;
+      showCard('intake', contract);
+    }
+    if (!triggered.review && head >= triggerDist.review) {
+      triggered.review = true;
+      showCard('review', contract);
+    }
+    if (!triggered.insight && head >= triggerDist.insight) {
+      triggered.insight = true;
+      showCard('insight', contract);
+    }
+
+    if (head >= fanSegLen) {
+      const headPipeX = FAN_TIP_X + (head - fanSegLen);
+      if (!inReview && headPipeX >= reviewBounds.x1 && headPipeX <= reviewBounds.x2) {
+        inReview = true;
+        reviewRect.setAttribute('filter', 'url(#comp-glow)');
+      } else if (inReview && headPipeX > reviewBounds.x2) {
+        inReview = false;
+        setTimeout(() => reviewRect.removeAttribute('filter'), 250);
+      }
+      if (!inInsight && headPipeX >= 1660) {
+        inInsight = true;
+        insightCyl.setAttribute('filter', 'url(#comp-glow)');
+        setTimeout(() => insightCyl.removeAttribute('filter'), 1200);
+      }
+    }
+
+    if (t < 1) requestAnimationFrame(tick);
+    else cleanup();
+  }
+  requestAnimationFrame(tick);
+}
+
+// ============================================================
+//  MAIN CYCLE — visibility-aware
+//   - shoot beam (6.5 s)
+//   - hold all 3 cards visible (2.5 s)
+//   - fade all (0.5 s)
+//   - pause (0.9 s)
+//   - repeat
+//
+//  When the tab becomes hidden, we cancel any in-flight beam and pause the
+//  cycle. setTimeout still fires while a tab is backgrounded but RAF doesn't,
+//  so without this guard a hidden iteration would create a beam that never
+//  animated, and on return the beam would be skipped entirely.
+// ============================================================
+let cycleTimeout = null;
+
+function cycle() {
+  if (document.hidden) { cycleTimeout = null; return; }
+  shootBeam();
+  cycleTimeout = setTimeout(() => {
+    hideAllCards();
+    cycleTimeout = setTimeout(() => {
+      cycleTimeout = null;
+      cycle();
+    }, FADE_DURATION + PAUSE_BETWEEN);
+  }, BEAM_DURATION + HOLD_AFTER_BEAM);
+}
+
+function stopCycle() {
+  if (cycleTimeout) { clearTimeout(cycleTimeout); cycleTimeout = null; }
+  activeBeams.forEach(b => { b._cancelled = true; if (b.parentNode) b.remove(); });
+  activeBeams.clear();
+  hideAllCards();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopCycle();
+  } else if (!cycleTimeout) {
+    setTimeout(cycle, 300);
+  }
+});
+
+setTimeout(() => { if (!document.hidden) cycle(); }, 800);
+</script>
+</body>
+</html>
